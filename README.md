@@ -11,3 +11,9 @@ Local-only development. No cloud resources until the final deployment phase.
 
 Edit `backend/.env`: set JWT_SECRET to 32+ random chars.
 AI runs in `LLM_MODE=mock` by default (zero quota). Switch to `groq` only when testing real output.
+
+## Auth (Step 2)
+- `POST /api/auth/register` `{name,email,password,role}` role = candidate | recruiter
+- `POST /api/auth/login` `{email,password}`
+- `GET /api/auth/me` (Bearer token)
+- Backend tests: `cd backend && npm test` (no MongoDB needed)

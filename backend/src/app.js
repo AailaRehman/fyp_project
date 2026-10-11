@@ -3,14 +3,16 @@ import cors from "cors";
 import helmet from "helmet";
 import { env } from "./config/env.js";
 import health from "./routes/health.js";
+import { makeAuthRouter } from "./routes/auth.js";
 
-export function createApp() {
+export function createApp({ userModel } = {}) {
   const app = express();
   app.use(helmet());
   app.use(cors({ origin: env.CLIENT_URL, credentials: true }));
   app.use(express.json({ limit: "1mb" }));
 
   app.use("/health", health);
+  app.use("/api/auth", makeAuthRouter(userModel));
 
   app.use((_req, res) => res.status(404).json({ error: "not_found" }));
   app.use((err, _req, res, _next) => {

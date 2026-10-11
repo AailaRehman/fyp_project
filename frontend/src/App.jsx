@@ -1,10 +1,20 @@
-import { useEffect, useState } from "react";
-const API = import.meta.env.VITE_API_URL;
+import { Routes, Route, Navigate } from "react-router-dom";
+import ProtectedRoute, { GuestRoute } from "./components/ProtectedRoute.jsx";
+import Home from "./pages/Home.jsx";
+import Login from "./pages/Login.jsx";
+import Register from "./pages/Register.jsx";
+import CandidateDashboard from "./pages/CandidateDashboard.jsx";
+import RecruiterDashboard from "./pages/RecruiterDashboard.jsx";
 
 export default function App() {
-  const [health, setHealth] = useState("checking...");
-  useEffect(() => {
-    fetch(`${API}/health`).then(r => r.json()).then(d => setHealth(JSON.stringify(d))).catch(() => setHealth("server unreachable"));
-  }, []);
-  return <pre style={{ padding: 24 }}>Smart Interview AI{"\n"}{health}</pre>;
+  return (
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
+      <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
+      <Route path="/candidate" element={<ProtectedRoute roles={["candidate"]}><CandidateDashboard /></ProtectedRoute>} />
+      <Route path="/recruiter" element={<ProtectedRoute roles={["recruiter"]}><RecruiterDashboard /></ProtectedRoute>} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }
