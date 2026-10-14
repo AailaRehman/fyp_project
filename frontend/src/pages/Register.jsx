@@ -34,24 +34,24 @@ export default function Register() {
     <AuthShell title="Create your account">
       <form onSubmit={submit} className="space-y-4">
         <fieldset className="grid grid-cols-2 gap-3">
-          <legend className="mb-1 text-sm font-medium text-slate-700">I am a</legend>
+          <legend className="mb-1 text-sm font-medium text-ink">I am a</legend>
           {ROLES.map((r) => (
             <label key={r.value}
-              className={`cursor-pointer rounded-md border p-3 text-sm ${form.role === r.value ? "border-indigo-600 bg-indigo-50" : "border-slate-300"}`}>
+              className={`cursor-pointer rounded-md border p-3 text-sm ${form.role === r.value ? "border-brand bg-surface" : "border-line"}`}>
               <input type="radio" name="role" value={r.value} checked={form.role === r.value} onChange={set("role")} className="sr-only" />
               <span className="block font-medium">{r.label}</span>
-              <span className="text-slate-500">{r.hint}</span>
+              <span className="text-muted">{r.hint}</span>
             </label>
           ))}
         </fieldset>
         <Field id="name" label="Full name" autoComplete="name" required minLength={2} value={form.name} onChange={set("name")} />
         <Field id="email" label="Email" type="email" autoComplete="email" required value={form.email} onChange={set("email")} />
         <Field id="password" label="Password (8+ chars, a letter and a number)" type="password" autoComplete="new-password" required minLength={8} value={form.password} onChange={set("password")} />
-        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-danger">{error}</p>}
         <button disabled={busy} className={primaryBtn}>{busy ? "Creating..." : "Create account"}</button>
       </form>
-      <p className="mt-4 text-sm text-slate-600">
-        Already registered? <Link to="/login" className="text-indigo-600 underline">Sign in</Link>
+      <p className="mt-4 text-sm text-muted">
+        Already registered? <Link to="/login" className="text-brand underline">Sign in</Link>
       </p>
     </AuthShell>
   );

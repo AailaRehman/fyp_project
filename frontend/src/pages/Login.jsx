@@ -31,11 +31,11 @@ export default function Login() {
       <form onSubmit={submit} className="space-y-4">
         <Field id="email" label="Email" type="email" autoComplete="email" required value={form.email} onChange={set("email")} />
         <Field id="password" label="Password" type="password" autoComplete="current-password" required value={form.password} onChange={set("password")} />
-        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-danger">{error}</p>}
         <button disabled={busy} className={primaryBtn}>{busy ? "Signing in..." : "Sign in"}</button>
       </form>
-      <p className="mt-4 text-sm text-slate-600">
-        No account? <Link to="/register" className="text-indigo-600 underline">Create one</Link>
+      <p className="mt-4 text-sm text-muted">
+        No account? <Link to="/register" className="text-brand underline">Create one</Link>
       </p>
     </AuthShell>
   );
