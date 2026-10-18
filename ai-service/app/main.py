@@ -4,14 +4,21 @@ load_dotenv()
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from .llm import complete_json, LLMUnavailable, _cfg
+from .routes import router, BadLLMOutput
 
 app = FastAPI(title="Smart Interview AI Service")
+app.include_router(router)
 
 
 @app.exception_handler(LLMUnavailable)
 async def llm_unavailable(_req: Request, exc: LLMUnavailable):
     return JSONResponse(status_code=503, content={
         "error": "ai_busy", "message": str(exc), "retry_after": exc.retry_after})
+
+
+@app.exception_handler(BadLLMOutput)
+async def bad_llm_output(_req: Request, exc: BadLLMOutput):
+    return JSONResponse(status_code=502, content={"error": "bad_ai_output", "message": str(exc)})
 
 
 @app.get("/health")
