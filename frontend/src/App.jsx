@@ -6,6 +6,7 @@ import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
 import CandidateDashboard from "./pages/CandidateDashboard.jsx";
 import RecruiterDashboard from "./pages/RecruiterDashboard.jsx";
+import McqInterview from "./pages/McqInterview.jsx";
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
         <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
         <Route path="/candidate" element={<ProtectedRoute roles={["candidate"]}><CandidateDashboard /></ProtectedRoute>} />
+        <Route path="/interview/:id/mcq" element={<ProtectedRoute roles={["candidate"]}><McqInterview /></ProtectedRoute>} />
         <Route path="/recruiter" element={<ProtectedRoute roles={["recruiter"]}><RecruiterDashboard /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

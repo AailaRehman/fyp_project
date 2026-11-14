@@ -43,6 +43,11 @@ export function errorMessage(e) {
     invalid_credentials: "Incorrect email or password.",
     network_error: "Cannot reach the server. Is the backend running?",
     too_many_requests: "Too many attempts. Please wait a few minutes.",
+    ai_unavailable: "The AI service is not available. Make sure it is running, then try again.",
+    ai_bad_response: "The AI gave an unusable reply. Please try again.",
+    interview_in_progress: "You already have an interview in progress.",
+    not_found: "That interview could not be found.",
+    conflict: "Something changed. Please refresh the page.",
   };
   return map[e?.message] || "Something went wrong. Please try again.";
 }
