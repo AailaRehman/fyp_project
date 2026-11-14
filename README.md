@@ -30,3 +30,14 @@ All run in mock mode by default (`LLM_MODE=mock`): no API calls, no quota. Level
 
 Errors: `422` invalid input, `502 bad_ai_output` (AI reply failed validation twice), `503 ai_busy` (rate limit or outage; has `retry_after`).
 Tests: `cd ai-service && python -m pytest`
+
+## MCQ phase (Step 5)
+Candidate-only endpoints (Bearer token). The server keeps the clock and the answer key; the browser only gets questions without answers.
+- `POST /api/interview/start` `{role, level, count}` (count 3-15) -> first question. Calls the AI service. One unfinished interview per candidate (409 with `interviewId`).
+- `GET /api/interview/:id` -> current question with `remainingMs`, or the result once finished. Refreshing never gives extra time.
+- `POST /api/interview/:id/mcq/answer` `{questionIndex, selectedIndex | null}` -> next question or the result. `null` means no answer.
+- `GET /api/interview/history` -> the candidate's interviews.
+Rules: 30 seconds per question (`MCQ_SECONDS`, 5-120, default 30) plus 2 seconds network grace; an unanswered question is marked timed out by the server. 60% or more passes (`mcq_passed`, next phase = voice interview). Below 60% the interview ends with verdict `Reject` (`rejected`).
+Practice interviews show the answer key only after the round ends.
+Errors: `409 stale_question` (old or repeated answer, includes the current state), `502 ai_bad_response`, `503 ai_unavailable`.
+Tests: `cd backend && npm test`

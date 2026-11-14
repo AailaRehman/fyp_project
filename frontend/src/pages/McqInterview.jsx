@@ -151,9 +151,9 @@ export default function McqInterview() {
           {error} <button onClick={submit} className="underline">Try again</button>
         </p>
       )}
-      <div className="mt-6 flex items-center justify-between gap-4">
-        <p className="text-sm text-muted">Answers are shown at the end. Press 1 to 4 to choose. If time runs out, your current choice is sent.</p>
-        <button onClick={submit} disabled={selected === null || submitting} className={primaryBtn + " w-auto shrink-0 px-6"}>
+      <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <p className="text-sm text-muted">Answers are shown at the end. <span className="hidden sm:inline">Press 1 to 4 to choose. </span>If time runs out, your current choice is sent.</p>
+        <button onClick={submit} disabled={selected === null || submitting} className={primaryBtn + " sm:w-auto sm:shrink-0 sm:px-6"}>
           {submitting ? "Sending..." : last ? "Finish" : "Next"}
         </button>
       </div>
