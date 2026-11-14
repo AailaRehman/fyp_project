@@ -7,6 +7,7 @@ const schema = z.object({
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 chars"),
   AI_SERVICE_URL: z.string().url(),
   CLIENT_URL: z.string().url(),
+  MCQ_SECONDS: z.coerce.number().int().min(5).max(120).default(30),
   STORAGE_DRIVER: z.enum(["local", "cloudinary"]).default("local"),
 });
 
