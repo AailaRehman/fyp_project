@@ -139,20 +139,3 @@ export function publicState(doc, now) {
   }
   return { ...base, result: result(doc) };
 }
-
-export function summary(doc) {
-  const m = doc.mcq;
-  return {
-    id: String(doc._id),
-    role: doc.role,
-    level: doc.level,
-    mode: doc.mode,
-    status: doc.status,
-    verdict: doc.verdict,
-    total: m.questions.length,
-    answered: m.answers.length,
-    correctCount: m.correctCount,
-    percent: m.percent,
-    createdAt: doc.createdAt,
-  };
-}

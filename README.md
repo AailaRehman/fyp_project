@@ -41,3 +41,13 @@ Rules: 30 seconds per question (`MCQ_SECONDS`, 5-120, default 30) plus 2 seconds
 Practice interviews show the answer key only after the round ends.
 Errors: `409 stale_question` (old or repeated answer, includes the current state), `502 ai_bad_response`, `503 ai_unavailable`.
 Tests: `cd backend && npm test`
+
+## Voice interview (Step 6, backend)
+Phase 2 of an interview. Candidate-only. Only available after the MCQ round was passed (60% or more).
+- `POST /api/interview/:id/voice/start` -> asks the AI service for question 1. Calling it again resumes without another AI call.
+- `POST /api/interview/:id/voice/answer` `{turnIndex, answer, pauses:{initialPauseMs, midPausesMs[]}}` -> scores the answer and writes the next question from it (both AI calls run together). The last answer finishes the interview.
+- `GET /api/interview/:id` and `GET /api/interview/history` now cover both phases.
+Statuses: `mcq_in_progress`, `mcq_passed`, `rejected`, `interview_in_progress`, `completed`, `abandoned` (no activity for `INTERVIEW_IDLE_MINUTES`, default 30).
+Settings: `INTERVIEW_QUESTIONS` (3-10, default 5), `INTERVIEW_IDLE_MINUTES` (5-240, default 30).
+Pause rules: initial pause is "long" above 5 s; mid-answer pauses of 3 s or more are logged. The server caps pause data by the time that really passed. If the AI fails nothing is stored, so the same answer can be sent again.
+Errors: `409 mcq_not_passed | stale_turn | interview_abandoned | already_completed | interview_in_progress`, `502 ai_bad_response`, `503 ai_unavailable`.

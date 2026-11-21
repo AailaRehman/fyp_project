@@ -27,7 +27,10 @@ export function makeFakeUser() {
 export function makeFakeInterview() {
   const rows = [];
   let n = 0;
-  const matches = (row, q) => Object.entries(q).every(([k, v]) => String(row[k]) === String(v));
+  const matches = (row, q) =>
+    Object.entries(q).every(([k, v]) =>
+      v && typeof v === "object" && Array.isArray(v.$in) ? v.$in.map(String).includes(String(row[k])) : String(row[k]) === String(v)
+    );
   const fake = {
     rows,
     failNextSave: null, // set to an error name to make the next save fail, e.g. "VersionError"
@@ -65,8 +68,11 @@ export function makeFakeInterview() {
 }
 
 export function makeFakeAi() {
+  const words = (t) => (t || "").trim().split(/\s+/).filter(Boolean).length;
   const ai = {
     calls: [],
+    questionCalls: [],
+    evalCalls: [],
     mode: "ok", // "ok" | "down" | "bad"
     async generateMcq(body) {
       ai.calls.push(body);
@@ -81,6 +87,24 @@ export function makeFakeAi() {
           explanation: `Explanation ${i + 1}`,
         })),
       };
+    },
+    // Behaves like the real AI service: an opening question, a follow-up built from the previous answer,
+    // and a "clarify" question when the previous answer was too short to build on.
+    async generateQuestion(body) {
+      ai.questionCalls.push(body);
+      if (ai.mode === "down") throw new AiError("unavailable");
+      if (ai.mode === "bad") return { question: "x", type: "nonsense" };
+      if (body.question_number === 1) return { question: `Opening question for ${body.role}?`, type: "opening" };
+      if (words(body.previous_answer) < 5) return { question: "Could you give one specific example?", type: "clarify" };
+      return { question: `Follow-up ${body.question_number} about: ${body.previous_answer.slice(0, 24)}?`, type: "follow_up" };
+    },
+    // Scores equal the number of words in the answer (capped at 10), so tests can predict them exactly.
+    async evaluateAnswer(body) {
+      ai.evalCalls.push(body);
+      if (ai.mode === "down") throw new AiError("unavailable");
+      if (ai.mode === "bad") return { technical: 99, communication: -1, confidence: "high", feedback: "" };
+      const n = Math.min(10, words(body.answer));
+      return { technical: n, communication: n, confidence: n ? 5 : 0, overall: n, feedback: n ? `Feedback for ${n} words.` : "No answer was recorded." };
     },
   };
   return ai;

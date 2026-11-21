@@ -8,6 +8,8 @@ const schema = z.object({
   AI_SERVICE_URL: z.string().url(),
   CLIENT_URL: z.string().url(),
   MCQ_SECONDS: z.coerce.number().int().min(5).max(120).default(30),
+  INTERVIEW_QUESTIONS: z.coerce.number().int().min(3).max(10).default(5),
+  INTERVIEW_IDLE_MINUTES: z.coerce.number().int().min(5).max(240).default(30),
   STORAGE_DRIVER: z.enum(["local", "cloudinary"]).default("local"),
 });
 

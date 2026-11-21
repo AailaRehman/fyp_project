@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const { Schema } = mongoose;
 
 export const LEVELS = ["junior", "mid", "senior"];
-export const STATUSES = ["mcq_in_progress", "mcq_passed", "rejected"];
+export const STATUSES = ["mcq_in_progress", "mcq_passed", "rejected", "interview_in_progress", "completed", "abandoned"];
 
 const questionSchema = new Schema(
   {
@@ -22,6 +22,44 @@ const answerSchema = new Schema(
     correct: { type: Boolean, required: true },
     timedOut: { type: Boolean, required: true },
     answeredAt: { type: Date, required: true },
+  },
+  { _id: false }
+);
+
+// Phase 2 (voice interview): one "turn" is one question and the spoken answer to it.
+const pauseSchema = new Schema(
+  {
+    initialMs: { type: Number, default: 0 }, // silence before the first word
+    midMs: { type: [Number], default: [] }, // pauses of 3 seconds or more in the middle of the answer
+    longInitial: { type: Boolean, default: false }, // initial pause longer than 5 seconds
+    longMidCount: { type: Number, default: 0 },
+    inconsistent: { type: Boolean, default: false }, // the browser claimed more pause time than really passed
+  },
+  { _id: false }
+);
+
+const evaluationSchema = new Schema(
+  {
+    technical: Number,
+    communication: Number,
+    confidence: Number,
+    overall: Number,
+    feedback: String,
+  },
+  { _id: false }
+);
+
+const turnSchema = new Schema(
+  {
+    index: { type: Number, required: true },
+    question: { type: String, required: true },
+    type: { type: String, enum: ["opening", "follow_up", "clarify"], required: true },
+    askedAt: { type: Date, required: true },
+    answer: { type: String, default: null }, // null until answered, "" if skipped
+    answeredAt: { type: Date, default: null },
+    elapsedMs: { type: Number, default: null },
+    pauses: { type: pauseSchema, default: undefined },
+    evaluation: { type: evaluationSchema, default: undefined },
   },
   { _id: false }
 );
@@ -46,15 +84,39 @@ const interviewSchema = new Schema(
       passed: { type: Boolean, default: null },
       completedAt: { type: Date, default: null },
     },
+    voice: {
+      total: { type: Number, default: 0 },
+      currentIndex: { type: Number, default: 0 },
+      turns: { type: [turnSchema], default: [] },
+      startedAt: { type: Date, default: null },
+      lastActivityAt: { type: Date, default: null },
+      completedAt: { type: Date, default: null },
+      scores: {
+        technical: { type: Number, default: null },
+        communication: { type: Number, default: null },
+        confidence: { type: Number, default: null },
+        overall: { type: Number, default: null },
+      },
+      summary: {
+        answered: { type: Number, default: 0 },
+        longInitialCount: { type: Number, default: 0 },
+        longMidCount: { type: Number, default: 0 },
+        avgInitialMs: { type: Number, default: null },
+      },
+    },
   },
   { timestamps: true, optimisticConcurrency: true }
 );
 
 interviewSchema.index({ candidate: 1, createdAt: -1 });
-// A candidate can have only one unfinished interview. This also stops a double-click from creating two.
+// A candidate can have only one unfinished interview per phase. This also stops a double-click from creating two.
 interviewSchema.index(
   { candidate: 1 },
   { unique: true, partialFilterExpression: { status: "mcq_in_progress" }, name: "one_open_interview_per_candidate" }
+);
+interviewSchema.index(
+  { candidate: 1 },
+  { unique: true, partialFilterExpression: { status: "interview_in_progress" }, name: "one_voice_interview_per_candidate" }
 );
 
 export const Interview = mongoose.models.Interview || mongoose.model("Interview", interviewSchema);

@@ -29,5 +29,9 @@ export function makeAiClient({ baseUrl = env.AI_SERVICE_URL, timeoutMs = 25000, 
       throw new AiError("bad_response");
     }
   }
-  return { generateMcq: (body) => post("/generate-mcq", body) };
+  return {
+    generateMcq: (body) => post("/generate-mcq", body),
+    generateQuestion: (body) => post("/generate-question", body),
+    evaluateAnswer: (body) => post("/evaluate-answer", body),
+  };
 }
