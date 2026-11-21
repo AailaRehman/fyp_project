@@ -48,6 +48,9 @@ export function errorMessage(e) {
     interview_in_progress: "You already have an interview in progress.",
     not_found: "That interview could not be found.",
     conflict: "Something changed. Please refresh the page.",
+    mcq_not_passed: "You need at least 60% in the multiple-choice round before the voice interview.",
+    interview_abandoned: "This interview was closed because it was left idle. Please start a new one.",
+    already_completed: "This interview is already finished.",
   };
   return map[e?.message] || "Something went wrong. Please try again.";
 }

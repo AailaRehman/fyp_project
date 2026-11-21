@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, errorMessage } from "../utils/api.js";
 import { primaryBtn } from "../components/AuthForm.jsx";
 
@@ -8,6 +8,7 @@ const clock = (secs) => `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2
 
 export default function McqInterview() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [state, setState] = useState(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState(null);
@@ -20,6 +21,10 @@ export default function McqInterview() {
 
   // Show a new state from the server and restart the clock from the time the SERVER says is left.
   const apply = useCallback((s) => {
+    if (s.status === "interview_in_progress" || s.status === "completed" || s.status === "abandoned") {
+      navigate(`/interview/${s.id}/voice`, { replace: true }); // already past this round
+      return;
+    }
     setState(s);
     setSelected(null);
     selectedRef.current = null;
@@ -31,7 +36,7 @@ export default function McqInterview() {
       deadline.current = performance.now() + s.current.remainingMs;
       setLeft(s.current.remainingMs);
     }
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,11 +177,14 @@ function Result({ state }) {
         You answered {r.correctCount} of {r.total} correctly ({r.percent}%). The pass mark is {r.passPercent}%.
       </p>
       {r.passed ? (
-        <p className="mt-3 text-muted">Next comes the voice interview on camera. That phase is built in the next step, so there is nothing more to do here yet.</p>
+        <p className="mt-3 text-muted">Next comes the voice interview on camera. You will answer by speaking, and each question follows from your last answer.</p>
       ) : (
         <p className="mt-3 text-muted">Your score is below the pass mark, so the interview ends here with a verdict of <strong className="text-ink">{r.verdict}</strong>. You can start another practice interview whenever you like.</p>
       )}
-      <Link to="/candidate" className={primaryBtn + " mt-6 inline-block w-auto px-6 text-center"}>Back to dashboard</Link>
+      <div className="mt-6 flex flex-wrap items-center gap-4">
+        {r.passed && <Link to={`/interview/${state.id}/voice`} className={primaryBtn + " inline-block w-auto px-6 text-center"}>Start the voice interview</Link>}
+        <Link to="/candidate" className={r.passed ? "text-brand underline" : primaryBtn + " inline-block w-auto px-6 text-center"}>Back to dashboard</Link>
+      </div>
 
       {r.review && (
         <section className="mt-10">
