@@ -5,6 +5,7 @@ import { primaryBtn } from "../components/AuthForm.jsx";
 import CameraPreview from "../components/CameraPreview.jsx";
 import { useCamera } from "../hooks/useCamera.js";
 import { useSpeechAnswer } from "../hooks/useSpeechAnswer.js";
+import { useGazeTracker } from "../hooks/useGazeTracker.js";
 import { canSpeak, speak, stopSpeaking, supportsVoiceInterview } from "../utils/speech.js";
 
 const MAX_ANSWER_MS = 180000; // one answer can last at most 3 minutes
@@ -31,6 +32,7 @@ export default function VoiceInterview() {
   const [starting, setStarting] = useState(false);
   const cam = useCamera();
   const sp = useSpeechAnswer();
+  const gaze = useGazeTracker(cam.stream);
   const pending = useRef(null);
   const submitRef = useRef(null);
   const supported = supportsVoiceInterview();
@@ -63,6 +65,7 @@ export default function VoiceInterview() {
     setStarting(true);
     try {
       if (state.status === "mcq_passed") applyState(await api(`/api/interview/${id}/voice/start`, { method: "POST" }));
+      gaze.calibrate();
       setGate(false);
     } catch (e) {
       if (e.body?.state) applyState(e.body.state);
@@ -75,6 +78,7 @@ export default function VoiceInterview() {
   useEffect(() => {
     if (gate || !state?.turn) return;
     let cancelled = false;
+    gaze.startQuestion();
     (async () => {
       setPhase("presenting");
       if (readAloud) await speak(state.turn.question);
@@ -109,10 +113,10 @@ export default function VoiceInterview() {
     const turnIndex = state.turn.index;
     if (skip) {
       sp.cancel();
-      return send({ turnIndex, answer: "", pauses: { initialPauseMs: 0, midPausesMs: [] } });
+      return send({ turnIndex, answer: "", pauses: { initialPauseMs: 0, midPausesMs: [] }, gaze: gaze.drain() });
     }
     const { text, pauses } = await sp.finish();
-    return send({ turnIndex, answer: text, pauses });
+    return send({ turnIndex, answer: text, pauses, gaze: gaze.drain() });
   }
   submitRef.current = submit;
 
@@ -166,6 +170,7 @@ export default function VoiceInterview() {
                 <li>Each new question is based on what you just said.</li>
                 <li>Your camera stays on during the interview.</li>
                 <li>Long silences are noted and shown with your results. A short pause to think is normal.</li>
+                <li>Your camera is also used to notice if you look away from the screen for several seconds. This is worked out inside your browser: no pictures are sent anywhere, only a note of when it happened.</li>
                 <li>Use Chrome or Edge, and keep your internet connection on, because speech recognition needs it.</li>
               </ul>
               <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -185,7 +190,10 @@ export default function VoiceInterview() {
               {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
               <Link to="/candidate" className="mt-6 inline-block text-sm text-brand underline">Back to dashboard</Link>
             </div>
-            <CameraPreview stream={cam.stream} status={cam.status} />
+            <div>
+              <CameraPreview stream={cam.stream} status={cam.status} />
+              <GazeStatus status={gaze.status} />
+            </div>
           </div>
         )}
       </main>
@@ -257,11 +265,33 @@ export default function VoiceInterview() {
         </div>
 
         <div className="order-1 md:order-2">
-          <CameraPreview stream={cam.stream} status={cam.status} className="ml-auto w-40 md:ml-0 md:w-auto md:sticky md:top-20" />
+          <div className="ml-auto w-40 md:ml-0 md:w-auto md:sticky md:top-20">
+            <CameraPreview stream={cam.stream} status={cam.status} />
+            <GazeStatus status={gaze.status} />
+          </div>
         </div>
       </div>
     </main>
   );
+}
+
+const GAZE_LABEL = { looking_away: "Looked away from the screen", no_face: "Face not in view", multiple_faces: "More than one face in view" };
+
+function GazeStatus({ status }) {
+  const text = {
+    idle: "",
+    loading: "Gaze check: getting ready...",
+    on: "Gaze check: on",
+    unavailable: "Gaze check: not available. The interview works without it.",
+  }[status];
+  return text ? <p className="mt-2 text-xs text-muted" data-testid="gaze-status">{text}</p> : null;
+}
+
+function gazeSummary(g) {
+  if (!g || g.status === "unavailable") return "Gaze tracking was not available, so where you looked was not checked.";
+  const part = g.status === "partial" ? " Gaze tracking worked for only part of the interview." : "";
+  if (g.events === 0) return `No looking away was noticed.${part}`;
+  return `Looking away, or not being in view, was noticed ${g.events} time${g.events === 1 ? "" : "s"} (about ${Math.round(g.totalMs / 1000)} seconds in total).${part}`;
 }
 
 function Result({ state }) {
@@ -298,6 +328,7 @@ function Result({ state }) {
         during an answer {summary.longMidCount} time{summary.longMidCount === 1 ? "" : "s"}.
         {summary.avgInitialMs !== null && ` On average you started speaking after ${sec(summary.avgInitialMs)} seconds.`}
       </p>
+      <p className="mt-3 text-muted" data-testid="gaze-summary">{gazeSummary(r.gaze)}</p>
       <Link to="/candidate" className={primaryBtn + " mt-6 inline-block w-auto px-6 text-center"}>Back to dashboard</Link>
 
       {turns && (
@@ -317,6 +348,13 @@ function Result({ state }) {
                     Waited {sec(t.pauses.initialMs)} s before answering{t.pauses.longInitial ? " (a long pause)" : ""}.
                     {t.pauses.longMidCount > 0 && ` ${t.pauses.longMidCount} pause${t.pauses.longMidCount === 1 ? "" : "s"} of 3 seconds or more during the answer.`}
                   </p>
+                )}
+                {t.gaze?.events?.length > 0 && (
+                  <ul className="mt-1 text-sm text-muted">
+                    {t.gaze.events.map((e, i) => (
+                      <li key={i}>{GAZE_LABEL[e.type]} for about {Math.max(1, Math.round(e.durationMs / 1000))} s, {Math.round(e.atMs / 1000)} s into the answer.</li>
+                    ))}
+                  </ul>
                 )}
               </li>
             ))}
