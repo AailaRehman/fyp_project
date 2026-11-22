@@ -51,7 +51,7 @@ export default function VoiceInterview() {
     setState(s);
     setRound((n) => n + 1);
     setPhase("idle");
-    if (s.result) {
+    if (s.result && s.phase === "interview") {
       sp.cancel();
       stopSpeaking();
       cam.stop();
@@ -142,7 +142,7 @@ export default function VoiceInterview() {
     );
   }
 
-  if (state.result) return <Result state={state} />;
+  if (state.result && state.phase === "interview") return <Result state={state} />;
 
   if (gate) {
     const resuming = state.status === "interview_in_progress";
@@ -152,7 +152,7 @@ export default function VoiceInterview() {
         <p className="mt-2 text-muted">
           {resuming
             ? `You are on question ${state.answered + 1} of ${state.total}. Your answer to this question starts again from the beginning.`
-            : `You passed the multiple-choice round with ${state.mcq.percent}%. Now you will answer ${state.total || "a few"} questions out loud.`}
+            : `You passed the multiple-choice round with ${state.mcq?.percent ?? state.result?.percent}%. Now you will answer a few questions out loud.`}
         </p>
         {!supported ? (
           <p role="alert" className="mt-6 rounded-md border border-line bg-surface p-4">
@@ -257,7 +257,7 @@ export default function VoiceInterview() {
         </div>
 
         <div className="order-1 md:order-2">
-          <CameraPreview stream={cam.stream} status={cam.status} className="md:sticky md:top-20" />
+          <CameraPreview stream={cam.stream} status={cam.status} className="ml-auto w-40 md:ml-0 md:w-auto md:sticky md:top-20" />
         </div>
       </div>
     </main>
@@ -295,7 +295,8 @@ function Result({ state }) {
 
       <p className="mt-6 text-muted">
         You waited more than 5 seconds before answering {summary.longInitialCount} time{summary.longInitialCount === 1 ? "" : "s"} and paused for 3 seconds or more
-        during an answer {summary.longMidCount} time{summary.longMidCount === 1 ? "" : "s"}. On average you started speaking after {sec(summary.avgInitialMs)} seconds.
+        during an answer {summary.longMidCount} time{summary.longMidCount === 1 ? "" : "s"}.
+        {summary.avgInitialMs !== null && ` On average you started speaking after ${sec(summary.avgInitialMs)} seconds.`}
       </p>
       <Link to="/candidate" className={primaryBtn + " mt-6 inline-block w-auto px-6 text-center"}>Back to dashboard</Link>
 
@@ -311,10 +312,12 @@ function Result({ state }) {
                   Technical {t.evaluation.technical}, communication {t.evaluation.communication}, confidence {t.evaluation.confidence}, overall {t.evaluation.overall}.
                 </p>
                 <p className="mt-1 text-sm">{t.evaluation.feedback}</p>
-                <p className="mt-1 text-sm text-muted">
-                  Waited {sec(t.pauses.initialMs)} s before answering{t.pauses.longInitial ? " (a long pause)" : ""}.
-                  {t.pauses.longMidCount > 0 && ` ${t.pauses.longMidCount} pause${t.pauses.longMidCount === 1 ? "" : "s"} of 3 seconds or more during the answer.`}
-                </p>
+                {t.answer && (
+                  <p className="mt-1 text-sm text-muted">
+                    Waited {sec(t.pauses.initialMs)} s before answering{t.pauses.longInitial ? " (a long pause)" : ""}.
+                    {t.pauses.longMidCount > 0 && ` ${t.pauses.longMidCount} pause${t.pauses.longMidCount === 1 ? "" : "s"} of 3 seconds or more during the answer.`}
+                  </p>
+                )}
               </li>
             ))}
           </ol>

@@ -120,3 +120,11 @@ test("practice results include per-question detail, other modes do not", () => {
   assert.equal(publicVoiceState(d).result.turns, undefined);
   assert.ok(publicVoiceState(d).result.scores.overall);
 });
+
+test("a skipped question is left out of the average wait, and an all-skipped interview has none", () => {
+  const some = run(3, [{ text: "a", score: 5, pauses: P(6000) }, { text: "", score: 0, pauses: P(0) }, { text: "c", score: 5, pauses: P(2000) }]);
+  assert.equal(some.voice.summary.avgInitialMs, 4000); // (6000 + 2000) / 2, not / 3
+  const none = run(3, [{ text: "", score: 0, pauses: P(0) }, { text: "", score: 0, pauses: P(0) }, { text: "", score: 0, pauses: P(0) }]);
+  assert.equal(none.voice.summary.avgInitialMs, null);
+  assert.equal(none.voice.scores.overall, 0);
+});

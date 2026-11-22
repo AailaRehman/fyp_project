@@ -57,13 +57,15 @@ export function sanitizePauses(p, elapsedMs) {
 function finishVoice(doc, at) {
   const v = doc.voice;
   const answered = v.turns.filter((t) => t.answer !== null && t.answer !== undefined);
+  const spoken = answered.filter((t) => t.answer !== "");
   const mean = (k) => round1(answered.reduce((s, t) => s + t.evaluation[k], 0) / answered.length);
   v.scores = { technical: mean("technical"), communication: mean("communication"), confidence: mean("confidence"), overall: mean("overall") };
   v.summary = {
     answered: answered.length,
     longInitialCount: answered.filter((t) => t.pauses.longInitial).length,
     longMidCount: answered.reduce((s, t) => s + t.pauses.longMidCount, 0),
-    avgInitialMs: Math.round(answered.reduce((s, t) => s + t.pauses.initialMs, 0) / answered.length),
+    // a skipped question has no wait to measure, so it is left out of the average
+    avgInitialMs: spoken.length ? Math.round(spoken.reduce((s, t) => s + t.pauses.initialMs, 0) / spoken.length) : null,
   };
   v.completedAt = at;
   doc.status = COMPLETED;

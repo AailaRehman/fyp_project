@@ -51,3 +51,13 @@ Statuses: `mcq_in_progress`, `mcq_passed`, `rejected`, `interview_in_progress`, 
 Settings: `INTERVIEW_QUESTIONS` (3-10, default 5), `INTERVIEW_IDLE_MINUTES` (5-240, default 30).
 Pause rules: initial pause is "long" above 5 s; mid-answer pauses of 3 s or more are logged. The server caps pause data by the time that really passed. If the AI fails nothing is stored, so the same answer can be sent again.
 Errors: `409 mcq_not_passed | stale_turn | interview_abandoned | already_completed | interview_in_progress`, `502 ai_bad_response`, `503 ai_unavailable`.
+
+## Voice interview (Step 6, frontend)
+Page: `/interview/:id/voice` (candidates only). The MCQ result page links to it after a pass.
+- Needs Google Chrome or Microsoft Edge (Web Speech API), a camera and a microphone. Speech recognition needs an internet connection.
+- Flow: turn on camera and microphone -> start -> each question is shown (and read aloud if switched on) -> the microphone listens -> "Done answering" or "Skip this question".
+- There is no text box: an answer can only come from the microphone. The camera is shown during the interview but is not recorded yet (Step 9).
+- Pause tracking (`src/utils/pauseTracker.js`): a message appears after 5 s of silence before answering, and after 3 s of silence mid-answer. All pauses are sent with the answer and shown in the results.
+- Refreshing during an interview asks the candidate to continue; the same question comes back and the answer starts again.
+- An answer ends by itself after 3 minutes or 3800 characters.
+- Tests: `cd frontend && npm test` (pause tracker). `cd backend && npm test` covers the server side.
