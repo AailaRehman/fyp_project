@@ -29,6 +29,7 @@ export function summary(doc) {
           total: v.total,
           answered: v.turns.filter((t) => t.answer !== null && t.answer !== undefined).length,
           overall: doc.status === voice.COMPLETED ? v.scores.overall : null,
+          gazeEvents: doc.status === voice.COMPLETED ? v.gaze.events : null,
         }
       : null,
     createdAt: doc.createdAt,

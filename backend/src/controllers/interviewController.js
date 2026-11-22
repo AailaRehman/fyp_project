@@ -2,7 +2,7 @@ import { z } from "zod";
 import { isValidObjectId } from "mongoose";
 import { AiError } from "../services/aiClient.js";
 import { IN_PROGRESS, StateError, buildInterview, expireOverdue, submitAnswer } from "../services/mcq.js";
-import { ABANDONED, COMPLETED, VOICE_IN_PROGRESS, expireIdle, sanitizePauses, startVoice, submitTurn } from "../services/voice.js";
+import { ABANDONED, COMPLETED, GAZE_EVENT_TYPES, VOICE_IN_PROGRESS, expireIdle, sanitizeGaze, sanitizePauses, startVoice, submitTurn } from "../services/voice.js";
 import { OPEN_STATUSES, publicState, summary } from "../services/state.js";
 
 const MINUTE = 60 * 1000;
@@ -27,6 +27,24 @@ const voiceAnswerSchema = z.object({
       midPausesMs: z.array(z.number().min(0).max(600000)).max(50).default([]),
     })
     .default({ initialPauseMs: 0, midPausesMs: [] }),
+  // What the browser noticed with the camera while this question was open. Optional: older clients send nothing.
+  gaze: z
+    .object({
+      status: z.enum(["on", "unavailable"]),
+      reason: z.string().regex(/^[a-z_]{1,40}$/).optional(),
+      samples: z.number().int().min(0).max(5000),
+      faceSamples: z.number().int().min(0).max(5000),
+      events: z
+        .array(
+          z.object({
+            type: z.enum(GAZE_EVENT_TYPES),
+            atMs: z.number().min(0).max(3600000),
+            durationMs: z.number().min(0).max(3600000),
+          })
+        )
+        .max(40),
+    })
+    .optional(),
 });
 
 // The AI service is a separate program, so everything it returns is checked again here instead of being trusted.
@@ -211,7 +229,9 @@ export function makeInterviewController({ Interview, ai, now = () => new Date(),
 
       const turn = v.turns[v.currentIndex];
       const answer = p.data.answer.replace(/\s+/g, " ").trim();
-      const pauses = sanitizePauses(p.data.pauses, new Date(t).getTime() - new Date(turn.askedAt).getTime());
+      const elapsed = new Date(t).getTime() - new Date(turn.askedAt).getTime();
+      const pauses = sanitizePauses(p.data.pauses, elapsed);
+      const gaze = sanitizeGaze(p.data.gaze, elapsed);
       const isLast = v.currentIndex + 1 >= v.total;
 
       // Scoring this answer and writing the next question do not depend on each other, so they run together.
@@ -242,7 +262,7 @@ export function makeInterviewController({ Interview, ai, now = () => new Date(),
       const next = isLast ? { success: true, data: null } : aiQuestionSchema.safeParse(rawNext);
       if (!ev.success || !next.success) return res.status(502).json({ error: "ai_bad_response" });
 
-      submitTurn(doc, { turnIndex: p.data.turnIndex, answer, pauses }, ev.data, next.data, t);
+      submitTurn(doc, { turnIndex: p.data.turnIndex, answer, pauses, gaze }, ev.data, next.data, t);
       if (!(await save(doc, res))) return;
       res.json(publicState(doc, t));
     },

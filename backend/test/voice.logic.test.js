@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sanitizePauses, startVoice, submitTurn, expireIdle, publicVoiceState, LONG_INITIAL_MS } from "../src/services/voice.js";
+import { sanitizePauses, sanitizeGaze, startVoice, submitTurn, expireIdle, publicVoiceState, LONG_INITIAL_MS } from "../src/services/voice.js";
 
 const T0 = Date.parse("2026-01-01T00:00:00Z");
 const at = (s) => new Date(T0 + s * 1000);
@@ -127,4 +127,65 @@ test("a skipped question is left out of the average wait, and an all-skipped int
   const none = run(3, [{ text: "", score: 0, pauses: P(0) }, { text: "", score: 0, pauses: P(0) }, { text: "", score: 0, pauses: P(0) }]);
   assert.equal(none.voice.summary.avgInitialMs, null);
   assert.equal(none.voice.scores.overall, 0);
+});
+
+// ---------- gaze ----------
+const G = (events, samples = 8, faceSamples = samples) => ({ status: "on", samples, faceSamples, events });
+const E = (type, atMs, durationMs) => ({ type, atMs, durationMs });
+
+test("gaze that was not reported or not running is stored as unavailable", () => {
+  assert.deepEqual(sanitizeGaze(undefined, 20000), { status: "unavailable", reason: "not_reported", samples: 0, faceSamples: 0, events: [] });
+  const r = sanitizeGaze({ status: "unavailable", reason: "load_failed", samples: 50, faceSamples: 50, events: [E("looking_away", 0, 5000)] }, 20000);
+  assert.deepEqual(r, { status: "unavailable", reason: "load_failed", samples: 0, faceSamples: 0, events: [] }); // nothing is trusted when it says it did not run
+});
+
+test("plausible gaze data is kept as it is", () => {
+  const r = sanitizeGaze(G([E("looking_away", 6000, 4000), E("no_face", 14000, 2000)], 9), 20000);
+  assert.deepEqual(r.events, [E("looking_away", 6000, 4000), E("no_face", 14000, 2000)]);
+  assert.equal(r.samples, 9);
+});
+
+test("gaze data cannot claim more checks or events than the time allows", () => {
+  const r = sanitizeGaze(G([E("looking_away", 50000, 99999)], 5000, 5000), 10000);
+  assert.equal(r.samples, 12); // 10 s allows at most 12
+  assert.equal(r.faceSamples, 12);
+  assert.deepEqual(r.events, [E("looking_away", 10000, 2000)]); // starts no later than the end, lasts at most one check beyond it
+});
+
+test("an event needs two checks in a row, and unknown event types are dropped", () => {
+  const many = Array.from({ length: 10 }, (_, i) => E("looking_away", i * 1000, 2000));
+  assert.equal(sanitizeGaze(G(many, 6), 30000).events.length, 3);
+  assert.equal(sanitizeGaze(G([E("looking_away", 0, 2000)], 1), 30000).events.length, 0);
+  assert.equal(sanitizeGaze(G([{ type: "dancing", atMs: 0, durationMs: 1 }], 8), 30000).events.length, 0);
+  assert.equal(sanitizeGaze(G([E("no_face", -5, -5)], 8), 30000).events[0].atMs, 0);
+});
+
+function runGaze(reports) {
+  const d = passedDoc();
+  startVoice(d, { question: "Opening?", type: "opening" }, { total: reports.length, now: at(0) });
+  reports.forEach((g, i) => submitTurn(d, { turnIndex: i, answer: "words", pauses: sanitizePauses(P(0), 20000), gaze: sanitizeGaze(g, 20000) }, ev(5), { question: `Next ${i + 2}?`, type: "follow_up" }, at((i + 1) * 20)));
+  return d;
+}
+
+test("the gaze summary counts events by type and adds up their time", () => {
+  const d = runGaze([G([E("looking_away", 4000, 6000), E("looking_away", 12000, 4000)]), G([E("no_face", 2000, 4000)]), G([E("multiple_faces", 0, 2000)])]);
+  assert.deepEqual(d.voice.gaze, { status: "on", events: 4, lookingAway: 2, noFace: 1, multipleFaces: 1, totalMs: 16000, samples: 24, expectedSamples: 30 });
+});
+
+test("gaze status is on, partial or unavailable, so no news is never mistaken for good news", () => {
+  const off = { status: "unavailable", reason: "load_failed", samples: 0, faceSamples: 0, events: [] };
+  assert.equal(runGaze([G([]), G([]), G([])]).voice.gaze.status, "on");
+  assert.equal(runGaze([G([]), off, G([])]).voice.gaze.status, "partial");
+  assert.equal(runGaze([off, off, off]).voice.gaze.status, "unavailable");
+  assert.equal(runGaze([undefined, undefined, undefined]).voice.gaze.status, "unavailable");
+});
+
+test("practice results list the gaze events for each answer", () => {
+  const d = runGaze([G([E("looking_away", 4000, 6000)]), G([]), G([])]);
+  const r = publicVoiceState(d).result;
+  assert.deepEqual(r.turns[0].gaze, { status: "on", events: [E("looking_away", 4000, 6000)] });
+  assert.equal(r.gaze.events, 1);
+  d.mode = "session";
+  assert.equal(publicVoiceState(d).result.turns, undefined);
+  assert.equal(publicVoiceState(d).result.gaze.events, 1); // the summary stays available for recruiter sessions
 });

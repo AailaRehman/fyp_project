@@ -27,7 +27,8 @@ const register = async (name, role) =>
 const start = (t, extra = {}) => call("POST", "/api/interview/start", t, { role: "Backend Developer", level: "mid", count: 5, ...extra });
 const mcq = (t, id, i, sel) => call("POST", `/api/interview/${id}/mcq/answer`, t, { questionIndex: i, selectedIndex: sel });
 const vStart = (t, id) => call("POST", `/api/interview/${id}/voice/start`, t);
-const vAnswer = (t, id, turnIndex, answer, pauses) => call("POST", `/api/interview/${id}/voice/answer`, t, { turnIndex, answer, ...(pauses && { pauses }) });
+const vAnswer = (t, id, turnIndex, answer, pauses, gaze) =>
+  call("POST", `/api/interview/${id}/voice/answer`, t, { turnIndex, answer, ...(pauses && { pauses }), ...(gaze && { gaze }) });
 const get = (t, id) => call("GET", `/api/interview/${id}`, t);
 const words = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");
 
@@ -271,4 +272,71 @@ test("history shows voice progress and the final score", async () => {
   const mcqOnly = h.body.interviews.find((i) => i.status === "rejected");
   assert.equal(mcqOnly.voice, null);
   assert.ok(!JSON.stringify(h.body).match(/answer"|feedback|correctIndex/i));
+});
+
+const gz = (events, samples = 9, faceSamples = samples) => ({ status: "on", samples, faceSamples, events });
+const off = { status: "unavailable", reason: "load_failed", samples: 0, faceSamples: 0, events: [] };
+
+test("gaze reports are stored per question and summarised at the end", async () => {
+  advance(100);
+  const id = await passed(cand);
+  await vStart(cand, id);
+  advance(20);
+  await vAnswer(cand, id, 0, words(6), undefined, gz([{ type: "looking_away", atMs: 6000, durationMs: 4000 }]));
+  advance(20);
+  await vAnswer(cand, id, 1, words(6), undefined, gz([{ type: "no_face", atMs: 2000, durationMs: 6000 }], 8, 4));
+  advance(20);
+  const done = await vAnswer(cand, id, 2, words(6), undefined, off);
+  assert.equal(done.status, 200);
+  assert.deepEqual(done.body.result.gaze, { status: "partial", events: 2, lookingAway: 1, noFace: 1, multipleFaces: 0, totalMs: 10000, samples: 17, expectedSamples: 30 });
+  assert.deepEqual(done.body.result.turns[0].gaze, { status: "on", events: [{ type: "looking_away", atMs: 6000, durationMs: 4000 }] });
+  assert.equal(done.body.result.turns[2].gaze.status, "unavailable");
+  const stored = fake.interviews.rows.find((r) => String(r._id) === id).voice.turns[0].gaze.events[0];
+  assert.equal(stored.at.getTime() - stored.atMs, new Date(fake.interviews.rows.find((r) => String(r._id) === id).voice.turns[0].askedAt).getTime()); // timestamp = when the question was asked + offset
+  const h = await call("GET", "/api/interview/history", cand);
+  assert.equal(h.body.interviews.find((i) => i.id === id).voice.gazeEvents, 2);
+});
+
+test("an answer without gaze data is stored as not reported", async () => {
+  advance(100);
+  const id = await passed(cand);
+  await vStart(cand, id);
+  await vAnswer(cand, id, 0, words(6)); await vAnswer(cand, id, 1, words(6));
+  const done = await vAnswer(cand, id, 2, words(6));
+  assert.equal(done.body.result.gaze.status, "unavailable");
+  assert.equal(fake.interviews.rows.find((r) => String(r._id) === id).voice.turns[0].gaze.reason, "not_reported");
+});
+
+test("gaze data that does not fit the time that passed is cut down", async () => {
+  advance(100);
+  const id = await passed(cand);
+  await vStart(cand, id);
+  advance(10);
+  await vAnswer(cand, id, 0, words(6), undefined, gz([{ type: "looking_away", atMs: 50000, durationMs: 99999 }], 5000, 5000));
+  await vAnswer(cand, id, 1, words(6)); 
+  const done = await vAnswer(cand, id, 2, words(6));
+  const t0 = done.body.result.turns[0].gaze;
+  assert.deepEqual(t0.events, [{ type: "looking_away", atMs: 10000, durationMs: 2000 }]);
+  assert.equal(done.body.result.gaze.samples, 12);
+});
+
+test("badly formed gaze data is refused", async () => {
+  advance(100);
+  const id = await passed(cand);
+  await vStart(cand, id);
+  const ev1 = { type: "looking_away", atMs: 1000, durationMs: 2000 };
+  const bad = [
+    gz([{ ...ev1, type: "dancing" }]),
+    gz([{ ...ev1, atMs: -1 }]),
+    gz([{ ...ev1, durationMs: 4000000 }]),
+    gz(Array(41).fill(ev1)),
+    { ...gz([]), samples: 1.5 },
+    { ...gz([]), samples: 6000 },
+    { ...gz([]), status: "maybe" },
+    { ...gz([]), reason: "Bad Reason!" },
+    { status: "on", samples: 1, faceSamples: 1 }, // events missing
+  ];
+  for (const g of bad) assert.equal((await vAnswer(cand, id, 0, words(6), undefined, g)).status, 400, JSON.stringify(g).slice(0, 80));
+  assert.equal((await get(cand, id)).body.turn.index, 0); // nothing was stored
+  await vAnswer(cand, id, 0, words(6)); await vAnswer(cand, id, 1, words(6)); await vAnswer(cand, id, 2, words(6));
 });

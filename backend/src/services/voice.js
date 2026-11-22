@@ -9,6 +9,8 @@ export const ABANDONED = "abandoned";
 export const LONG_INITIAL_MS = 5000; // silence before answering that counts as a long pause
 export const LONG_MID_MS = 3000; // silence in the middle of an answer that is logged
 export const SLACK_MS = 1500; // allowance for the browser and server clocks not matching exactly
+export const GAZE_SAMPLE_MS = 2000; // the browser checks the camera image about every 2 seconds
+export const GAZE_EVENT_TYPES = ["looking_away", "no_face", "multiple_faces"];
 
 const ms = (d) => new Date(d).getTime();
 const round1 = (x) => Math.round(x * 10) / 10;
@@ -26,6 +28,7 @@ export function startVoice(doc, first, { total, now }) {
     lastActivityAt: now,
     completedAt: null,
     scores: { technical: null, communication: null, confidence: null, overall: null },
+    gaze: { status: null, events: 0, lookingAway: 0, noFace: 0, multipleFaces: 0, totalMs: 0, samples: 0, expectedSamples: 0 },
     summary: { answered: 0, longInitialCount: 0, longMidCount: 0, avgInitialMs: null },
   };
 }
@@ -54,6 +57,42 @@ export function sanitizePauses(p, elapsedMs) {
   };
 }
 
+/** Keeps only gaze data that is plausible for the time that really passed. */
+export function sanitizeGaze(g, elapsedMs) {
+  const cap = Math.max(0, Math.round(elapsedMs));
+  if (!g || g.status !== "on") {
+    return { status: "unavailable", reason: g?.reason ?? "not_reported", samples: 0, faceSamples: 0, events: [] };
+  }
+  const samples = Math.min(Math.round(g.samples), Math.floor(cap / 1000) + 2); // cannot have more checks than time allows
+  const faceSamples = Math.min(Math.round(g.faceSamples), samples);
+  const events = (g.events ?? [])
+    .filter((e) => GAZE_EVENT_TYPES.includes(e.type))
+    .slice(0, Math.floor(samples / 2)) // an event needs at least two checks in a row
+    .map((e) => {
+      const atMs = Math.min(Math.max(0, Math.round(e.atMs)), cap);
+      const durationMs = Math.min(Math.max(0, Math.round(e.durationMs)), Math.max(0, cap - atMs) + GAZE_SAMPLE_MS);
+      return { type: e.type, atMs, durationMs };
+    });
+  return { status: "on", reason: null, samples, faceSamples, events };
+}
+
+function summariseGaze(answered) {
+  const g = answered.map((t) => t.gaze).filter(Boolean);
+  const tracked = g.filter((x) => x.status === "on").length;
+  const all = g.flatMap((x) => Array.from(x.events ?? []));
+  const count = (type) => all.filter((e) => e.type === type).length;
+  return {
+    status: tracked === 0 ? "unavailable" : tracked === answered.length ? "on" : "partial",
+    events: all.length,
+    lookingAway: count("looking_away"),
+    noFace: count("no_face"),
+    multipleFaces: count("multiple_faces"),
+    totalMs: all.reduce((s, e) => s + e.durationMs, 0),
+    samples: g.reduce((s, x) => s + (x.samples ?? 0), 0),
+    expectedSamples: Math.round(answered.reduce((s, t) => s + (t.elapsedMs ?? 0), 0) / GAZE_SAMPLE_MS),
+  };
+}
+
 function finishVoice(doc, at) {
   const v = doc.voice;
   const answered = v.turns.filter((t) => t.answer !== null && t.answer !== undefined);
@@ -67,12 +106,13 @@ function finishVoice(doc, at) {
     // a skipped question has no wait to measure, so it is left out of the average
     avgInitialMs: spoken.length ? Math.round(spoken.reduce((s, t) => s + t.pauses.initialMs, 0) / spoken.length) : null,
   };
+  v.gaze = summariseGaze(answered);
   v.completedAt = at;
   doc.status = COMPLETED;
 }
 
 /** Stores the answer and its evaluation, then either asks the next question or finishes. */
-export function submitTurn(doc, { turnIndex, answer, pauses }, evaluation, next, now) {
+export function submitTurn(doc, { turnIndex, answer, pauses, gaze }, evaluation, next, now) {
   const v = doc.voice;
   if (doc.status !== VOICE_IN_PROGRESS) throw new StateError("not_in_progress");
   if (turnIndex !== v.currentIndex) throw new StateError("stale_turn");
@@ -81,6 +121,14 @@ export function submitTurn(doc, { turnIndex, answer, pauses }, evaluation, next,
   turn.answeredAt = now;
   turn.elapsedMs = ms(now) - ms(turn.askedAt);
   turn.pauses = pauses;
+  const g = gaze ?? sanitizeGaze(undefined, 0);
+  turn.gaze = {
+    status: g.status,
+    reason: g.reason,
+    samples: g.samples,
+    faceSamples: g.faceSamples,
+    events: g.events.map((e) => ({ ...e, at: new Date(ms(turn.askedAt) + e.atMs) })),
+  };
   turn.evaluation = {
     technical: evaluation.technical,
     communication: evaluation.communication,
@@ -112,6 +160,7 @@ function voiceResult(doc) {
     total: v.total,
     scores: doc.status === COMPLETED ? { ...plain(v.scores) } : null,
     summary: doc.status === COMPLETED ? { ...plain(v.summary) } : null,
+    gaze: doc.status === COMPLETED ? { ...plain(v.gaze) } : null,
   };
   if (doc.mode === "practice") {
     out.turns = v.turns
@@ -123,6 +172,10 @@ function voiceResult(doc) {
         answer: t.answer,
         evaluation: { ...plain(t.evaluation) },
         pauses: { ...plain(t.pauses), midMs: Array.from(t.pauses.midMs) },
+        gaze: {
+          status: t.gaze?.status ?? "unavailable",
+          events: Array.from(t.gaze?.events ?? [], (e) => ({ type: e.type, atMs: e.atMs, durationMs: e.durationMs })),
+        },
       }));
   }
   return out;

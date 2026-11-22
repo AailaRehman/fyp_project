@@ -38,6 +38,28 @@ const pauseSchema = new Schema(
   { _id: false }
 );
 
+// Gaze tracking (Step 7). The browser reports what it noticed for each question; the server keeps the result.
+export const GAZE_EVENT_TYPES = ["looking_away", "no_face", "multiple_faces"];
+const gazeEventSchema = new Schema(
+  {
+    type: { type: String, enum: GAZE_EVENT_TYPES, required: true },
+    at: { type: Date, required: true }, // when it started
+    atMs: { type: Number, required: true }, // how long after the question was asked
+    durationMs: { type: Number, required: true },
+  },
+  { _id: false }
+);
+const gazeSchema = new Schema(
+  {
+    status: { type: String, enum: ["on", "unavailable"], required: true }, // "unavailable" = tracking did not run, so nothing was checked
+    reason: { type: String, default: null },
+    samples: { type: Number, default: 0 }, // how many times the camera image was checked
+    faceSamples: { type: Number, default: 0 }, // how many of those had a face in view
+    events: { type: [gazeEventSchema], default: [] },
+  },
+  { _id: false }
+);
+
 const evaluationSchema = new Schema(
   {
     technical: Number,
@@ -60,6 +82,7 @@ const turnSchema = new Schema(
     elapsedMs: { type: Number, default: null },
     pauses: { type: pauseSchema, default: undefined },
     evaluation: { type: evaluationSchema, default: undefined },
+    gaze: { type: gazeSchema, default: undefined },
   },
   { _id: false }
 );
@@ -96,6 +119,16 @@ const interviewSchema = new Schema(
         communication: { type: Number, default: null },
         confidence: { type: Number, default: null },
         overall: { type: Number, default: null },
+      },
+      gaze: {
+        status: { type: String, default: null }, // on | partial | unavailable, set when the interview ends
+        events: { type: Number, default: 0 },
+        lookingAway: { type: Number, default: 0 },
+        noFace: { type: Number, default: 0 },
+        multipleFaces: { type: Number, default: 0 },
+        totalMs: { type: Number, default: 0 },
+        samples: { type: Number, default: 0 },
+        expectedSamples: { type: Number, default: 0 },
       },
       summary: {
         answered: { type: Number, default: 0 },
