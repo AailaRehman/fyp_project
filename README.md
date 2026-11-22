@@ -61,3 +61,14 @@ Page: `/interview/:id/voice` (candidates only). The MCQ result page links to it 
 - Refreshing during an interview asks the candidate to continue; the same question comes back and the answer starts again.
 - An answer ends by itself after 3 minutes or 3800 characters.
 - Tests: `cd frontend && npm test` (pause tracker). `cd backend && npm test` covers the server side.
+
+## Gaze tracking (Step 7)
+The camera that is already on for the voice interview is also used to notice when the candidate looks away.
+- MediaPipe Face Landmarker (`@mediapipe/tasks-vision` 1.2.2, Apache-2.0) is loaded **from a CDN in the browser** (`src/utils/mediapipe.js`). Nothing is installed. The model runs on the candidate's computer: no camera pictures are uploaded, only a note of when something was noticed.
+- About every 2 seconds the image is checked (`src/hooks/useGazeTracker.js`). The decision logic is plain arithmetic in `src/utils/gaze.js` (tested with `npm test`).
+- Events: `looking_away` (head turned more than 30 degrees, tilted more than 25, or eyes pointing far to a side or up/down), `no_face` (nobody in view), `multiple_faces` (more than one face in view). An event needs **two checks in a row**, so a glance or a blink is ignored.
+- The ready screen learns how the candidate normally sits (their last few normal checks), so a slightly turned posture is not punished.
+- Each answer carries the events from its question: `gaze: {status, samples, faceSamples, events:[{type, atMs, durationMs}]}`. The server caps them by the time that really passed, stores a timestamp and the question, and summarises at the end (`on`, `partial` or `unavailable`).
+- **If MediaPipe cannot load or stops working, the interview carries on.** The data then says `unavailable` (with a reason), so "nothing was checked" is never mistaken for "nothing was noticed".
+- The limits (30 / 25 / 0.45 / 0.5) are starting values and have **not been tuned on real people**. Change them in `CONFIG` in `src/utils/gaze.js` if honest candidates are flagged or obvious look-aways are missed.
+- To check the real model on your computer: open the interview in Chrome, turn the camera on, and the line under the camera should say "Gaze check: on". Look to the side for about 6 seconds, finish the answer, and the results should list "Looked away from the screen".
