@@ -14,9 +14,10 @@ export function makeInterviewRouter({
   startLimit = 20,
   voiceQuestions = env.INTERVIEW_QUESTIONS,
   idleMinutes = env.INTERVIEW_IDLE_MINUTES,
+  violationLimit = env.MAX_VIOLATIONS,
 } = {}) {
   const router = Router();
-  const c = makeInterviewController({ Interview, ai, now, limitSeconds, voiceQuestions, idleMinutes });
+  const c = makeInterviewController({ Interview, ai, now, limitSeconds, voiceQuestions, idleMinutes, violationLimit });
   // Every start calls the AI service, so starts are limited to protect the free quota.
   const startLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -32,5 +33,6 @@ export function makeInterviewRouter({
   router.post("/:id/mcq/answer", c.answer);
   router.post("/:id/voice/start", c.startVoice);
   router.post("/:id/voice/answer", c.answerVoice);
+  router.post("/:id/violations", c.reportViolation);
   return router;
 }

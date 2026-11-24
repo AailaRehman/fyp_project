@@ -23,6 +23,8 @@ export function buildInterview({ candidateId, role, level, questions, limitSecon
     status: IN_PROGRESS,
     verdict: null,
     verdictReason: null,
+    autoSubmitted: false,
+    violations: [],
     mcq: {
       questions: questions.map((q) => ({
         question: q.question,
@@ -68,6 +70,17 @@ function record(doc, selectedIndex, at) {
   m.currentIndex = i + 1;
   if (m.currentIndex >= m.questions.length) finish(doc, at);
   else m.questionStartedAt = at;
+}
+
+/** Ends the round on the spot (too many violations). Questions not yet reached count as unanswered, and the round
+    is a Reject however well it was going. */
+export function abortRound(doc, at) {
+  while (doc.status === IN_PROGRESS) record(doc, null, at);
+  doc.mcq.passed = false;
+  doc.status = "rejected";
+  doc.verdict = "Reject";
+  doc.verdictReason = "auto_submitted";
+  doc.autoSubmitted = true;
 }
 
 /** Marks every question whose time (plus the grace allowance) has passed as timed out.

@@ -2,6 +2,7 @@
    The browser measures pauses and sends them with the answer, but the server never trusts them blindly:
    they are capped by the time that really passed between asking the question and receiving the answer. */
 import { StateError } from "./mcq.js";
+import { GAZE_EVENT_TYPES } from "../constants.js";
 
 export const VOICE_IN_PROGRESS = "interview_in_progress";
 export const COMPLETED = "completed";
@@ -10,7 +11,7 @@ export const LONG_INITIAL_MS = 5000; // silence before answering that counts as 
 export const LONG_MID_MS = 3000; // silence in the middle of an answer that is logged
 export const SLACK_MS = 1500; // allowance for the browser and server clocks not matching exactly
 export const GAZE_SAMPLE_MS = 2000; // the browser checks the camera image about every 2 seconds
-export const GAZE_EVENT_TYPES = ["looking_away", "no_face", "multiple_faces"];
+export { GAZE_EVENT_TYPES };
 
 const ms = (d) => new Date(d).getTime();
 const round1 = (x) => Math.round(x * 10) / 10;
@@ -97,7 +98,7 @@ function finishVoice(doc, at) {
   const v = doc.voice;
   const answered = v.turns.filter((t) => t.answer !== null && t.answer !== undefined);
   const spoken = answered.filter((t) => t.answer !== "");
-  const mean = (k) => round1(answered.reduce((s, t) => s + t.evaluation[k], 0) / answered.length);
+  const mean = (k) => (answered.length ? round1(answered.reduce((s, t) => s + t.evaluation[k], 0) / answered.length) : 0);
   v.scores = { technical: mean("technical"), communication: mean("communication"), confidence: mean("confidence"), overall: mean("overall") };
   v.summary = {
     answered: answered.length,
@@ -109,6 +110,14 @@ function finishVoice(doc, at) {
   v.gaze = summariseGaze(answered);
   v.completedAt = at;
   doc.status = COMPLETED;
+}
+
+/** Ends the interview on the spot (too many violations). Whatever was answered so far is scored; the rest is not. */
+export function abortVoice(doc, at) {
+  finishVoice(doc, at);
+  doc.verdict = "Reject";
+  doc.verdictReason = "auto_submitted";
+  doc.autoSubmitted = true;
 }
 
 /** Stores the answer and its evaluation, then either asks the next question or finishes. */

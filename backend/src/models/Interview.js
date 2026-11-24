@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { GAZE_EVENT_TYPES, VIOLATION_TYPES } from "../constants.js";
 
 const { Schema } = mongoose;
 
@@ -39,7 +40,6 @@ const pauseSchema = new Schema(
 );
 
 // Gaze tracking (Step 7). The browser reports what it noticed for each question; the server keeps the result.
-export const GAZE_EVENT_TYPES = ["looking_away", "no_face", "multiple_faces"];
 const gazeEventSchema = new Schema(
   {
     type: { type: String, enum: GAZE_EVENT_TYPES, required: true },
@@ -56,6 +56,18 @@ const gazeSchema = new Schema(
     samples: { type: Number, default: 0 }, // how many times the camera image was checked
     faceSamples: { type: Number, default: 0 }, // how many of those had a face in view
     events: { type: [gazeEventSchema], default: [] },
+  },
+  { _id: false }
+);
+
+// A rule break noticed by the browser (Layer 1 anti-cheating), recorded by the server.
+const violationSchema = new Schema(
+  {
+    type: { type: String, enum: VIOLATION_TYPES, required: true },
+    at: { type: Date, required: true },
+    phase: { type: String, enum: ["mcq", "voice"], required: true },
+    questionNumber: { type: Number, required: true }, // 1-based, worked out by the server
+    counted: { type: Boolean, required: true }, // false = logged only, not a strike
   },
   { _id: false }
 );
@@ -96,6 +108,8 @@ const interviewSchema = new Schema(
     status: { type: String, enum: STATUSES, required: true },
     verdict: { type: String, enum: ["Reject"], default: null },
     verdictReason: { type: String, default: null },
+    autoSubmitted: { type: Boolean, default: false }, // ended by the system after too many violations
+    violations: { type: [violationSchema], default: [] },
     mcq: {
       questions: { type: [questionSchema], default: [] },
       answers: { type: [answerSchema], default: [] },

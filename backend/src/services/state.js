@@ -1,11 +1,22 @@
 import * as mcq from "./mcq.js";
 import * as voice from "./voice.js";
+import { countedViolations } from "./violations.js";
 
 export const OPEN_STATUSES = [mcq.IN_PROGRESS, voice.VOICE_IN_PROGRESS];
 
 /** The one place that decides what the browser sees, whichever phase the interview is in. */
-export function publicState(doc, now) {
-  return voice.isVoiceStatus(doc.status) ? voice.publicVoiceState(doc) : mcq.publicState(doc, now);
+export function publicState(doc, now, { violationLimit = 3 } = {}) {
+  const base = voice.isVoiceStatus(doc.status) ? voice.publicVoiceState(doc) : mcq.publicState(doc, now);
+  return { ...base, autoSubmitted: !!doc.autoSubmitted, violations: violationView(doc, violationLimit) };
+}
+
+/** What the candidate may see about rule breaks: how many count, and the log. */
+function violationView(doc, limit) {
+  return {
+    count: countedViolations(doc),
+    limit,
+    items: Array.from(doc.violations ?? [], (v) => ({ type: v.type, phase: v.phase, questionNumber: v.questionNumber, counted: v.counted })),
+  };
 }
 
 /** One line per interview for the history list. */
@@ -32,6 +43,8 @@ export function summary(doc) {
           gazeEvents: doc.status === voice.COMPLETED ? v.gaze.events : null,
         }
       : null,
+    violations: countedViolations(doc),
+    autoSubmitted: !!doc.autoSubmitted,
     createdAt: doc.createdAt,
   };
 }

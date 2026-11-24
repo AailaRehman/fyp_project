@@ -10,6 +10,7 @@ const schema = z.object({
   MCQ_SECONDS: z.coerce.number().int().min(5).max(120).default(30),
   INTERVIEW_QUESTIONS: z.coerce.number().int().min(3).max(10).default(5),
   INTERVIEW_IDLE_MINUTES: z.coerce.number().int().min(5).max(240).default(30),
+  MAX_VIOLATIONS: z.coerce.number().int().min(1).max(10).default(3),
   STORAGE_DRIVER: z.enum(["local", "cloudinary"]).default("local"),
 });
 

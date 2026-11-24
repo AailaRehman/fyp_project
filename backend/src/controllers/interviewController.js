@@ -4,6 +4,8 @@ import { AiError } from "../services/aiClient.js";
 import { IN_PROGRESS, StateError, buildInterview, expireOverdue, submitAnswer } from "../services/mcq.js";
 import { ABANDONED, COMPLETED, GAZE_EVENT_TYPES, VOICE_IN_PROGRESS, expireIdle, sanitizeGaze, sanitizePauses, startVoice, submitTurn } from "../services/voice.js";
 import { OPEN_STATUSES, publicState, summary } from "../services/state.js";
+import { countedViolations, recordViolation } from "../services/violations.js";
+import { VIOLATION_TYPES } from "../constants.js";
 
 const MINUTE = 60 * 1000;
 
@@ -75,13 +77,18 @@ const aiEvalSchema = z.object({
   feedback: z.string().trim().min(1).max(1000),
 });
 
+const violationSchema = z.object({
+  type: z.enum(VIOLATION_TYPES),
+  agoMs: z.number().min(0).max(120000).optional(), // for a report that was delayed by a network problem
+});
+
 const badRequest = (res, parsed) =>
   res.status(400).json({
     error: "validation_error",
     issues: parsed.error.issues.map((i) => ({ field: i.path.join("."), message: i.message })),
   });
 
-export function makeInterviewController({ Interview, ai, now = () => new Date(), limitSeconds, voiceQuestions = 5, idleMinutes = 30 }) {
+export function makeInterviewController({ Interview, ai, now = () => new Date(), limitSeconds, voiceQuestions = 5, idleMinutes = 30, violationLimit = 3 }) {
   const aiFail = (res, e) => {
     if (!(e instanceof AiError)) throw e;
     return e.kind === "bad_response"
@@ -116,6 +123,8 @@ export function makeInterviewController({ Interview, ai, now = () => new Date(),
     }
     return doc;
   }
+
+  const view = (doc, t) => publicState(doc, t, { violationLimit });
 
   // Closes anything whose time has run out. Returns true if the document changed and needs saving.
   const settle = (doc, t) =>
@@ -156,7 +165,7 @@ export function makeInterviewController({ Interview, ai, now = () => new Date(),
         if (e?.code === 11000) return res.status(409).json({ error: "interview_in_progress" });
         throw e;
       }
-      res.status(201).json(publicState(doc, now()));
+      res.status(201).json(view(doc, now()));
     },
 
     async get(req, res) {
@@ -164,7 +173,7 @@ export function makeInterviewController({ Interview, ai, now = () => new Date(),
       if (!doc) return;
       const t = now();
       if (settle(doc, t) && !(await save(doc, res))) return;
-      res.json(publicState(doc, t));
+      res.json(view(doc, t));
     },
 
     async answer(req, res) {
@@ -181,8 +190,8 @@ export function makeInterviewController({ Interview, ai, now = () => new Date(),
         stateError = e; // time-outs recorded before the error still need saving
       }
       if (!(await save(doc, res))) return;
-      if (stateError) return res.status(409).json({ error: stateError.code, state: publicState(doc, t) });
-      res.json(publicState(doc, t));
+      if (stateError) return res.status(409).json({ error: stateError.code, state: view(doc, t) });
+      res.json(view(doc, t));
     },
 
     // ---------- phase 2: voice interview ----------
@@ -191,10 +200,10 @@ export function makeInterviewController({ Interview, ai, now = () => new Date(),
       if (!doc) return;
       const t = now();
       if (settle(doc, t) && !(await save(doc, res))) return;
-      if (doc.status === VOICE_IN_PROGRESS) return res.json(publicState(doc, t)); // already started: carry on, no new AI call
+      if (doc.status === VOICE_IN_PROGRESS) return res.json(view(doc, t)); // already started: carry on, no new AI call
       if (doc.status !== "mcq_passed") {
         const error = doc.status === ABANDONED ? "interview_abandoned" : doc.status === COMPLETED ? "already_completed" : "mcq_not_passed";
-        return res.status(409).json({ error, state: publicState(doc, t) });
+        return res.status(409).json({ error, state: view(doc, t) });
       }
       const other = await Interview.findOne({ candidate: req.auth.userId, status: VOICE_IN_PROGRESS });
       if (other) return res.status(409).json({ error: "interview_in_progress", interviewId: String(other._id) });
@@ -210,7 +219,7 @@ export function makeInterviewController({ Interview, ai, now = () => new Date(),
 
       startVoice(doc, q.data, { total: voiceQuestions, now: t });
       if (!(await save(doc, res))) return;
-      res.status(201).json(publicState(doc, t));
+      res.status(201).json(view(doc, t));
     },
 
     async answerVoice(req, res) {
@@ -222,10 +231,10 @@ export function makeInterviewController({ Interview, ai, now = () => new Date(),
       if (settle(doc, t) && !(await save(doc, res))) return;
       if (doc.status !== VOICE_IN_PROGRESS) {
         const error = doc.status === ABANDONED ? "interview_abandoned" : "not_in_progress";
-        return res.status(409).json({ error, state: publicState(doc, t) });
+        return res.status(409).json({ error, state: view(doc, t) });
       }
       const v = doc.voice;
-      if (p.data.turnIndex !== v.currentIndex) return res.status(409).json({ error: "stale_turn", state: publicState(doc, t) });
+      if (p.data.turnIndex !== v.currentIndex) return res.status(409).json({ error: "stale_turn", state: view(doc, t) });
 
       const turn = v.turns[v.currentIndex];
       const answer = p.data.answer.replace(/\s+/g, " ").trim();
@@ -264,7 +273,33 @@ export function makeInterviewController({ Interview, ai, now = () => new Date(),
 
       submitTurn(doc, { turnIndex: p.data.turnIndex, answer, pauses, gaze }, ev.data, next.data, t);
       if (!(await save(doc, res))) return;
-      res.json(publicState(doc, t));
+      res.json(view(doc, t));
+    },
+
+    // ---------- Layer 1 anti-cheating ----------
+    async reportViolation(req, res) {
+      const doc = await load(req, res);
+      if (!doc) return;
+      const p = violationSchema.safeParse(req.body);
+      if (!p.success) return badRequest(res, p);
+      const t = now();
+      if (settle(doc, t) && !(await save(doc, res))) return;
+      let out;
+      try {
+        out = recordViolation(doc, p.data, t, violationLimit);
+      } catch (e) {
+        if (!(e instanceof StateError)) throw e;
+        return res.status(409).json({ error: e.code, state: view(doc, t) }); // already finished: nothing to record
+      }
+      if (out.recorded && !(await save(doc, res))) return;
+      res.json({
+        recorded: out.recorded,
+        counted: out.counted,
+        count: countedViolations(doc),
+        limit: violationLimit,
+        autoSubmitted: out.autoSubmitted,
+        ...(out.autoSubmitted && { state: view(doc, t) }),
+      });
     },
 
     async history(req, res) {
