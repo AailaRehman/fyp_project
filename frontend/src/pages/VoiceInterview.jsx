@@ -6,6 +6,9 @@ import CameraPreview from "../components/CameraPreview.jsx";
 import { useCamera } from "../hooks/useCamera.js";
 import { useSpeechAnswer } from "../hooks/useSpeechAnswer.js";
 import { useGazeTracker } from "../hooks/useGazeTracker.js";
+import { useIntegrity } from "../hooks/useIntegrity.js";
+import IntegrityBanner from "../components/IntegrityBanner.jsx";
+import ViolationLog from "../components/ViolationLog.jsx";
 import { canSpeak, speak, stopSpeaking, supportsVoiceInterview } from "../utils/speech.js";
 
 const MAX_ANSWER_MS = 180000; // one answer can last at most 3 minutes
@@ -130,6 +133,15 @@ export default function VoiceInterview() {
     if (phase === "listening" && sp.text.length >= MAX_CHARS) submitRef.current(false);
   }, [sp.text, phase]);
 
+  // Rule-break watch: only while the interview is running (not on the ready screen, where permission prompts appear).
+  const integrity = useIntegrity({
+    id,
+    active: !gate && !!state?.turn,
+    limit: state?.violations?.limit ?? 3,
+    serverCount: state?.violations?.count ?? 0,
+    onAutoSubmit: (s) => applyState(s),
+  });
+
   // ---------- screens ----------
   if (!state) {
     return (
@@ -171,6 +183,10 @@ export default function VoiceInterview() {
                 <li>Your camera stays on during the interview.</li>
                 <li>Long silences are noted and shown with your results. A short pause to think is normal.</li>
                 <li>Your camera is also used to notice if you look away from the screen for several seconds. This is worked out inside your browser: no pictures are sent anywhere, only a note of when it happened.</li>
+                <li>
+                  Switching to another tab or window, copying, cutting and pasting are not allowed and are recorded as warnings. After {state.violations?.limit ?? 3} warnings
+                  the interview is submitted automatically and ends with a verdict of Reject. Right-click is turned off.
+                </li>
                 <li>Use Chrome or Edge, and keep your internet connection on, because speech recognition needs it.</li>
               </ul>
               <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -213,7 +229,8 @@ export default function VoiceInterview() {
             <div className="h-1.5 rounded-full bg-brand" style={{ width: `${(state.answered / state.total) * 100}%` }} />
           </div>
 
-          <h1 className="mt-6 font-display text-2xl font-semibold leading-snug">{turn.question}</h1>
+          <IntegrityBanner {...integrity} />
+          <h1 className="mt-6 select-none font-display text-2xl font-semibold leading-snug">{turn.question}</h1>
           <p className="mt-3 flex items-center gap-2 text-sm text-muted" aria-live="polite">
             {listening && <span aria-hidden="true" className="h-2 w-2 rounded-full bg-danger" />}
             {statusLine}
@@ -329,6 +346,7 @@ function Result({ state }) {
         {summary.avgInitialMs !== null && ` On average you started speaking after ${sec(summary.avgInitialMs)} seconds.`}
       </p>
       <p className="mt-3 text-muted" data-testid="gaze-summary">{gazeSummary(r.gaze)}</p>
+      <ViolationLog state={state} />
       <Link to="/candidate" className={primaryBtn + " mt-6 inline-block w-auto px-6 text-center"}>Back to dashboard</Link>
 
       {turns && (

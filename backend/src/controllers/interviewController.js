@@ -308,7 +308,7 @@ export function makeInterviewController({ Interview, ai, now = () => new Date(),
       for (const d of docs) {
         if (settle(d, t) && !(await save(d, res))) return;
       }
-      res.json({ interviews: docs.map(summary) });
+      res.json({ interviews: docs.map(summary), violationLimit });
     },
   };
 }

@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, errorMessage } from "../utils/api.js";
 import { primaryBtn } from "../components/AuthForm.jsx";
+import { useIntegrity } from "../hooks/useIntegrity.js";
+import IntegrityBanner from "../components/IntegrityBanner.jsx";
+import ViolationLog from "../components/ViolationLog.jsx";
 
 const LETTERS = ["A", "B", "C", "D"];
 const clock = (secs) => `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
@@ -96,6 +99,15 @@ export default function McqInterview() {
     return () => window.removeEventListener("keydown", onKey);
   }, [choose]);
 
+  // Rule-break watch: only while a question is on screen. The server counts and may end the round.
+  const integrity = useIntegrity({
+    id,
+    active: !!state?.current,
+    limit: state?.violations?.limit ?? 3,
+    serverCount: state?.violations?.count ?? 0,
+    onAutoSubmit: apply,
+  });
+
   if (!state) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
@@ -132,13 +144,14 @@ export default function McqInterview() {
         <div className="h-2 rounded-full" style={{ width: `${(left / (limitSeconds * 1000)) * 100}%`, background: low ? "var(--signal)" : "var(--brand)" }} />
       </div>
       <p className="sr-only" aria-live="polite">{secs === 10 ? "10 seconds left" : secs === 5 ? "5 seconds left" : ""}</p>
+      <IntegrityBanner {...integrity} />
 
       <fieldset key={current.index} className="mt-8" disabled={submitting}>
-        <legend className="font-display text-xl font-semibold leading-snug">{current.question}</legend>
+        <legend className="select-none font-display text-xl font-semibold leading-snug">{current.question}</legend>
         <div className="mt-5 space-y-3">
           {current.options.map((opt, i) => (
             <label key={i}
-              className={`flex cursor-pointer items-start gap-3 rounded-md border p-3.5 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand ${
+              className={`flex cursor-pointer select-none items-start gap-3 rounded-md border p-3.5 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand ${
                 selected === i ? "border-brand bg-surface" : "border-line hover:bg-surface"
               }`}>
               <input type="radio" name="option" className="sr-only" checked={selected === i} onChange={() => choose(i)} />
@@ -179,8 +192,14 @@ function Result({ state }) {
       {r.passed ? (
         <p className="mt-3 text-muted">Next comes the voice interview on camera. You will answer by speaking, and each question follows from your last answer.</p>
       ) : (
+        state.autoSubmitted ? (
+        <p className="mt-3 text-muted">The round was submitted automatically, so the interview ends here with a verdict of <strong className="text-ink">{r.verdict}</strong>. You can start another practice interview whenever you like.</p>
+      ) : (
         <p className="mt-3 text-muted">Your score is below the pass mark, so the interview ends here with a verdict of <strong className="text-ink">{r.verdict}</strong>. You can start another practice interview whenever you like.</p>
+      )
       )}
+      <ViolationLog state={state} />
+
       <div className="mt-6 flex flex-wrap items-center gap-4">
         {r.passed && <Link to={`/interview/${state.id}/voice`} className={primaryBtn + " inline-block w-auto px-6 text-center"}>Start the voice interview</Link>}
         <Link to="/candidate" className={r.passed ? "text-brand underline" : primaryBtn + " inline-block w-auto px-6 text-center"}>Back to dashboard</Link>

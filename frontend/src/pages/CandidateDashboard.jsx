@@ -46,10 +46,11 @@ export default function CandidateDashboard() {
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState(null); // null while loading
   const [historyError, setHistoryError] = useState(false);
+  const [limit, setLimit] = useState(3); // how many warnings end an interview (set by the server)
 
   useEffect(() => {
     api("/api/interview/history")
-      .then((d) => setHistory(d.interviews))
+      .then((d) => { setHistory(d.interviews); if (d.violationLimit) setLimit(d.violationLimit); })
       .catch(() => { setHistory([]); setHistoryError(true); });
   }, []);
 
@@ -95,6 +96,10 @@ export default function CandidateDashboard() {
           <p className="text-sm text-muted">
             Each multiple-choice question is timed, and when time runs out the next one appears. Score 60% or more to move on to the voice interview.
             Below 60% the interview ends.
+          </p>
+          <p className="text-sm text-muted">
+            While an interview is running, switching to another tab or window, copying, cutting and pasting are recorded as warnings. After {limit} warnings the interview is submitted
+            automatically and ends with a verdict of Reject. Right-click is turned off.
           </p>
           {error && <p role="alert" className="text-sm text-danger">{error}</p>}
           <button disabled={busy} className={primaryBtn + " sm:w-auto sm:px-6"}>{busy ? "Preparing questions..." : "Start"}</button>
