@@ -72,3 +72,14 @@ The camera that is already on for the voice interview is also used to notice whe
 - **If MediaPipe cannot load or stops working, the interview carries on.** The data then says `unavailable` (with a reason), so "nothing was checked" is never mistaken for "nothing was noticed".
 - The limits (30 / 25 / 0.45 / 0.5) are starting values and have **not been tuned on real people**. Change them in `CONFIG` in `src/utils/gaze.js` if honest candidates are flagged or obvious look-aways are missed.
 - To check the real model on your computer: open the interview in Chrome, turn the camera on, and the line under the camera should say "Gaze check: on". Look to the side for about 6 seconds, finish the answer, and the results should list "Looked away from the screen".
+
+## Anti-cheating, layer 1 (Step 8)
+Rule-based checks in the browser, active only while a question is on screen (MCQ round and voice interview, not the ready screen or the results).
+- **Watched:** tab switch (`visibilitychange`), window blur (held back 200 ms, so a quick focus flicker is ignored), copy, cut, paste and right-click. Copy, cut, paste and right-click are blocked.
+- A tab switch also blurs the window; that is **one** incident (`src/utils/guard.js`), and the server also merges reports less than 1.5 s apart.
+- **Counts as a warning:** tab switch, window blur, copy, cut, paste. **Right-click** is blocked and logged but does not count (people do it by habit). To change this, edit `COUNTED_VIOLATION_TYPES` in `backend/src/constants.js`.
+- After `MAX_VIOLATIONS` warnings (default 3, counted over the whole interview, both phases) the server **submits the interview automatically**: an MCQ round becomes `rejected`, a voice interview becomes `completed` with what was answered so far scored. Both get verdict `Reject`, reason `auto_submitted`, and `autoSubmitted: true`.
+- The candidate sees "Warning 2 of 3" before the last one, and the full log (type, question number, whether it counted) in the results.
+- `POST /api/interview/:id/violations` `{type, agoMs?}` -> `{recorded, counted, count, limit, autoSubmitted, state?}`. The server works out the phase and question number itself and records its own timestamp. Reports that fail because of the network are retried by the browser.
+- `GET /api/interview/:id` and `/history` now include `autoSubmitted` and `violations`.
+- Limits: this is a deterrent, not a lock. Someone who knows how can disable browser scripts, use a second device, or look at a phone. The camera checks (Step 7) and the recording (Step 9) cover some of that.

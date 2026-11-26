@@ -213,7 +213,7 @@ function Result({ state }) {
               <li key={i} className="py-4">
                 <p className="font-medium">{i + 1}. {q.question}</p>
                 <p className="mt-1 text-sm">
-                  <strong>{q.timedOut ? "Time ran out" : q.correct ? "Correct" : "Incorrect"}.</strong>{" "}
+                  <strong>{q.timedOut ? (state.autoSubmitted ? "Not answered" : "Time ran out") : q.correct ? "Correct" : "Incorrect"}.</strong>{" "}
                   {q.timedOut ? "No answer was sent." : `You chose ${LETTERS[q.selectedIndex]}: ${q.options[q.selectedIndex]}.`}
                 </p>
                 {!q.correct && <p className="text-sm">Correct answer: {LETTERS[q.correctIndex]}: {q.options[q.correctIndex]}.</p>}
